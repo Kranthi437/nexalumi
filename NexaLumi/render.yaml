@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: nexalumi-link-checker-api
+    name: nexalumi-api
     runtime: node
     rootDir: server
     buildCommand: npm ci
@@ -9,13 +9,29 @@ services:
     envVars:
       - key: NODE_VERSION
         value: 22.22.2
-      - key: GOOGLE_WEB_RISK_API_KEY
-        sync: false
       - key: CORS_ORIGIN
         value: https://trynexalumi.com,https://www.trynexalumi.com
-      - key: WEB_RISK_TIMEOUT_MS
+      - key: PHISHTANK_APP_KEY
+        sync: false
+      - key: URLHAUS_AUTH_KEY
+        sync: false
+      - key: OTX_API_KEY
+        sync: false
+      - key: THREAT_PROVIDER_TIMEOUT_MS
         value: "8000"
+      - key: LINK_CACHE_TTL_MS
+        value: "600000"
       - key: RATE_LIMIT_WINDOW_MS
         value: "60000"
       - key: RATE_LIMIT_MAX
         value: "20"
+      - key: TRUST_PROXY
+        value: "1"
+      # Optional distributed rate limiting. Configure both secrets in the hosting dashboard.
+      - key: UPSTASH_REDIS_REST_URL
+        sync: false
+      - key: UPSTASH_REDIS_REST_TOKEN
+        sync: false
+      # Google Web Risk is retained in source but disabled in the active provider registry.
+      # - key: GOOGLE_WEB_RISK_API_KEY
+      #   sync: false

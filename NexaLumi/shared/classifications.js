@@ -7,6 +7,7 @@ export const CLASSIFICATIONS = {
 
 export const THREAT_INTEL_STATUS = {
   COMPLETED: 'completed',
+  PARTIAL: 'partial',
   MISSING_API_KEY: 'missing_api_key',
   TIMEOUT: 'timeout',
   RATE_LIMITED: 'rate_limited',

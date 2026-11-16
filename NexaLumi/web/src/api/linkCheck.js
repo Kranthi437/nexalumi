@@ -44,3 +44,17 @@ export async function requestLinkCheck(url) {
 
   return data;
 }
+
+export async function requestBulkLinkCheck(urls) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30000);
+  try {
+    const response = await fetch(`${API_BASE}/api/link-check/bulk`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ urls }), signal: controller.signal,
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || 'The bulk check could not be completed.');
+    return data;
+  } finally { clearTimeout(timeout); }
+}

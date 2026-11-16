@@ -1,61 +1,57 @@
 # NEXALUMI deployment guide
 
-NEXALUMI is split into two deployable parts:
+This source package contains a React/Vite frontend and an Express API. The Link Checker queries reputation providers; it does not open or crawl submitted URLs.
 
-- `web/`: React + Vite static frontend (Vercel)
-- `server/`: Express API (a Node.js host such as Render)
+## Runtime
 
-The Link Checker needs both services. A successful frontend deployment by itself does not provide threat checks.
+Use Node.js `22.22.2` or newer in the supported 22.x line. The original project declares this minimum. Install dependencies independently in `server/` and `web/` using `npm ci`.
 
-## 1. Deploy the backend API
-
-Create a Node.js web service from this repository with:
+## Backend deployment (Render or equivalent)
 
 - Root directory: `server`
 - Build command: `npm ci`
 - Start command: `npm start`
-- Health check path: `/api/health`
-- Node.js: `22.22.2` or newer in the supported 22.x line
+- Health check: `/api/health`
 
-Set these backend environment variables in the hosting dashboard:
+Set these backend environment variables:
 
-| Variable | Value |
-| --- | --- |
-| `GOOGLE_WEB_RISK_API_KEY` | Your restricted Google Web Risk API key |
-| `CORS_ORIGIN` | `https://trynexalumi.com,https://www.trynexalumi.com,https://web-one-puce-97.vercel.app` |
-| `WEB_RISK_TIMEOUT_MS` | `8000` |
-| `RATE_LIMIT_WINDOW_MS` | `60000` |
-| `RATE_LIMIT_MAX` | `20` |
+| Variable | Required | Purpose |
+|---|---:|---|
+| `CORS_ORIGIN` | Yes | Comma-separated exact frontend origins |
+| `PHISHTANK_APP_KEY` | Recommended | Free PhishTank app key; limited API requests may work without it |
+| `URLHAUS_AUTH_KEY` | Optional | Free abuse.ch Auth-Key for URLhaus community API; subject to fair-use and commercial terms |
+| `OTX_API_KEY` | Optional | AlienVault OTX API key |
+| `THREAT_PROVIDER_TIMEOUT_MS` | No | Provider timeout; default 8000 ms |
+| `LINK_CACHE_TTL_MS` | No | In-process cache lifetime; default 600000 ms |
+| `RATE_LIMIT_WINDOW_MS` | No | Rate-limit window; default 60000 ms |
+| `RATE_LIMIT_MAX` | No | Requests per window and client IP; default 20 |
+| `TRUST_PROXY` | Yes in hosted deployment | Number or expression matching the actual trusted proxy chain; default 1 |
+| `UPSTASH_REDIS_REST_URL` | Optional | Upstash Redis REST endpoint for distributed rate limiting |
+| `UPSTASH_REDIS_REST_TOKEN` | Optional | Upstash Redis REST token |
+| `MAX_MESSAGE_LENGTH` | No | Maximum pasted message/email length; default 12000 |
 
-Use the actual Vercel deployment hostname if it changes. Do not add a trailing slash to origins. Never commit the real API key or put it in a `VITE_` variable.
+Never commit `.env` or expose provider keys in a `VITE_` variable. Use `server/.env.example` as a template.
 
-After deployment, open `https://YOUR-API-HOST/api/health`. It should return:
+The Google Web Risk implementation is retained in `server/src/services/threatIntel/googleWebRisk.js`. Its import/registration and environment-variable example are commented out intentionally; it is not called by the active provider chain. To re-enable it later, restore the import and add it to the provider registry after reviewing current pricing and terms.
 
-```json
-{ "ok": true, "service": "nexalumi-link-checker" }
-```
+## Frontend deployment (Vercel or equivalent)
 
-## 2. Configure the Vercel frontend
+- Root directory: `web`
+- Build command: `npm ci && npm run build`
+- Output directory: `dist`
+- Environment variable: `VITE_API_BASE_URL=https://YOUR-API-HOST` (origin only, no `/api` suffix)
 
-In the Vercel project settings, set:
+Keep the backend CORS allowlist aligned with the deployed frontend origins.
 
-`VITE_API_BASE_URL=https://YOUR-API-HOST`
-
-Use the backend's HTTPS origin only, with no `/api` suffix and no trailing slash.
-
-Set the Vercel project root directory to `web` and select Node.js `22.22.2` or newer in the project build settings, then redeploy. The Vite build command is `npm run build`; the output directory is `dist`.
-
-Keep `trynexalumi.com` connected to the existing Vercel project that serves the correct frontend. Do not change DNS unless Vercel specifically reports that a record is missing or incorrect.
-
-## 3. Local development
+## Local execution
 
 Terminal 1:
 
 ```bash
 cd server
-npm install
+npm ci
 cp .env.example .env
-# Add GOOGLE_WEB_RISK_API_KEY to server/.env
+# Add provider keys to .env as desired
 npm run dev
 ```
 
@@ -63,37 +59,41 @@ Terminal 2:
 
 ```bash
 cd web
-npm install
+npm ci
 npm run dev
 ```
 
-The Vite development server proxies `/api` to `http://127.0.0.1:3001`. Leave `VITE_API_BASE_URL` empty locally.
+The Vite development server proxies `/api` to `http://127.0.0.1:3001`.
 
-## 4. Google Web Risk setup
+## Provider behavior
 
-1. Select or create a Google Cloud project.
-2. Enable the Web Risk API.
-3. Create an API key and restrict it to the Web Risk API.
-4. Store it only as `GOOGLE_WEB_RISK_API_KEY` in the backend environment.
-5. Check the Google Cloud quota and billing settings before public launch.
+- PhishTank: phishing URL database; free API key recommended. An entry is treated as a confirmed match only when it is in the database, verified and valid.
+- URLhaus: malware-distribution URL database; requires an abuse.ch Auth-Key. Community API is free under fair-use principles; companies or for-profit needs may require the enhanced commercial API. Review its terms before using it in a revenue-generating service.
+- AlienVault OTX: community threat-intelligence indicator lookup; requires an OTX API key.
+- Google Web Risk: retained but disabled/commented in the active chain.
 
-The backend uses the `X-Goog-Api-Key` header. The submitted website is not fetched, opened or crawled by NEXALUMI.
+Provider calls run in parallel. A positive match from any responding provider yields `Known Malicious`. If at least one provider successfully returns no match and none reports a threat, the result can be `No Known Threat Found`; the UI shows how many configured providers responded. If all active providers fail, the result is `Unknown / Unable to Check`, never a clean verdict. NEXALUMI heuristics can additionally classify a no-match URL as `Suspicious`.
 
-## 5. Production release checks
+## Caching and rate limiting
 
-Before sharing the public link:
+The current URL reputation cache and default rate limiter are in-memory and apply to a single Node process. They are useful for development/single-instance use but are not durable or shared across replicas. Configure Upstash Redis REST variables to enable distributed per-IP rate limiting. For multi-instance production, replace the in-memory reputation cache with a shared cache (for example Redis) before relying on cache hit rates or global cost controls. The in-memory cache stores SHA-256 cache keys, not raw URLs.
 
-- Verify `/api/health` on the deployed backend.
-- Run one benign URL check and confirm the provider status is `Completed`.
-- Verify that missing credentials or provider failures show `Unknown / Unable to Check`, never a clean result.
-- Confirm browser developer tools do not show the Google API key in frontend assets or requests.
-- Confirm the backend CORS list contains only the real frontend origins.
-- Check rate limiting and hosting logs without logging submitted URLs.
-- Review privacy notice, terms, data retention and support contact details.
-- Perform an independent security review and load test before relying on the service commercially.
+## Implemented checkers and limitations
 
-## Scope and limitations
+- Link Checker: live multi-provider reputation lookups plus URL heuristics.
+- Message Checker: server-side heuristic analysis only; not an ML classifier or definitive phishing detector.
+- Email Checker: content heuristics plus SPF/DMARC DNS record-presence checks for a supplied From domain. DKIM signature verification and actual message authentication are not performed. A pasted `Authentication-Results` header can be forged; only trust headers from a known receiving mail system.
+- QR Checker: uses the browser `BarcodeDetector` API where supported to decode a local image or camera stream, then submits the decoded URL to Link Checker. Unsupported browsers can paste decoded text instead.
+- Scan History: stored in local browser storage only; not synchronized or backed up.
+- Dashboard, profile, notifications, admin, learning content, accounts and subscription workflows: remain marked as prototype/under development. They are not backed by a production database or authentication system.
 
-This release implements the Link Checker only. Message Checker, Email Checker, QR Checker, accounts, history, notifications and admin screens remain interface previews. There is no database and no persistent scan history. The in-memory rate limiter is per backend process and is not a distributed abuse-prevention system.
+## Release checklist — required before production
 
-A Google Web Risk no-match response means only that the provider did not report a known match at lookup time. It does not certify a website as safe.
+1. Deploy to staging and configure provider credentials; test `/api/health` and `/api/providers`.
+2. Test known benign URLs and safe test indicators from each provider's official documentation. Do not visit live malware/phishing URLs.
+3. Verify provider outages and missing credentials produce `Unknown`, not a clean verdict.
+4. Verify provider terms, fair-use limits and commercial licensing for your business model.
+5. Configure Upstash Redis for distributed rate limiting and implement a shared Redis cache/global daily budget before multi-instance scaling.
+6. Review DNS/proxy trust settings, CORS, TLS, secrets, privacy notice, data retention and abuse monitoring.
+7. Run frontend tests/build with Node 22.22.2+ and browser E2E tests on the deployment environment.
+8. Perform independent security testing and load testing. This package is not a certification of production readiness.

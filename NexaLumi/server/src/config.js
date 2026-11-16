@@ -28,9 +28,19 @@ export function getConfig() {
   return {
     port: Number(process.env.PORT) || 3001,
     corsOrigins: origin.split(',').map((item) => item.trim()).filter(Boolean),
-    googleWebRiskApiKey: (process.env.GOOGLE_WEB_RISK_API_KEY || '').trim(),
-    webRiskTimeoutMs: Number(process.env.WEB_RISK_TIMEOUT_MS) || 8000,
+    // Google Web Risk is retained in googleWebRisk.js but disabled in the active provider registry.
+    // googleWebRiskApiKey: (process.env.GOOGLE_WEB_RISK_API_KEY || '').trim(),
+    phishTankAppKey: (process.env.PHISHTANK_APP_KEY || '').trim(),
+    urlhausAuthKey: (process.env.URLHAUS_AUTH_KEY || '').trim(),
+    otxApiKey: (process.env.OTX_API_KEY || '').trim(),
+    cacheTtlMs: Number(process.env.LINK_CACHE_TTL_MS) || 600000,
+    threatProviderTimeoutMs: Number(process.env.THREAT_PROVIDER_TIMEOUT_MS) || 8000,
     rateLimitWindowMs: Number(process.env.RATE_LIMIT_WINDOW_MS) || 60_000,
     rateLimitMax: Number(process.env.RATE_LIMIT_MAX) || 20,
+    trustProxy: process.env.TRUST_PROXY === undefined ? 1 : (/^\d+$/.test(process.env.TRUST_PROXY) ? Number(process.env.TRUST_PROXY) : process.env.TRUST_PROXY),
+    upstashRedisRestUrl: (process.env.UPSTASH_REDIS_REST_URL || '').trim(),
+    upstashRedisRestToken: (process.env.UPSTASH_REDIS_REST_TOKEN || '').trim(),
+    maxMessageLength: Number(process.env.MAX_MESSAGE_LENGTH) || 12000,
+    maxLinkChecksPerDay: Number(process.env.MAX_LINK_CHECKS_PER_DAY) || 5000,
   };
 }

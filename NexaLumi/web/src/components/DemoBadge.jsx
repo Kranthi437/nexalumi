@@ -1,3 +1,3 @@
 export default function DemoBadge() {
-  return <span className="demo-badge"><span /> Demo prototype</span>;
+  return <span className="demo-badge"><span /> Under development</span>;
 }

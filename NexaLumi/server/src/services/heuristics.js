@@ -2,7 +2,7 @@ const DEFAULT_HEURISTICS = {
   ipHostname: true,
   userinfo: true,
   atInUrl: true,
-  punycode: false,
+  punycode: true,
   manySubdomains: { enabled: true, maxLabels: 5 },
   suspiciousTlds: [
     '.xyz',

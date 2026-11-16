@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { requestLinkCheck } from '../api/linkCheck.js';
+import { requestLinkCheck, requestBulkLinkCheck } from '../api/linkCheck.js';
+import { saveScan } from '../utils/scanHistory.js';
 import { Button, Card, Notice, PageTitle } from '../components/ui.jsx';
 import { normalizeAndValidateUrl } from '../../../shared/url.js';
 
@@ -23,6 +24,9 @@ function formatTimestamp(value) {
 
 export function LinkChecker() {
   const [value, setValue] = useState('');
+  const [bulkMode, setBulkMode] = useState(false);
+  const [bulkValue, setBulkValue] = useState('');
+  const [bulkResults, setBulkResults] = useState(null);
   const [inputError, setInputError] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
@@ -44,6 +48,7 @@ export function LinkChecker() {
     }
 
     setInputError('');
+    setBulkResults(null);
     setLoading(true);
     setRequestError('');
     setRetryable(false);
@@ -51,6 +56,7 @@ export function LinkChecker() {
     try {
       const data = await requestLinkCheck(rawUrl);
       setResult(data);
+      saveScan({ type: 'Link', label: data.hostname || rawUrl, classification: data.classification, details: data.explanation });
     } catch (error) {
       setResult(error.result && error.result.explanation ? error.result : null);
       setRequestError(error.message || 'The check could not be completed.');
@@ -60,13 +66,27 @@ export function LinkChecker() {
     }
   }
 
+  async function runBulkCheck() {
+    const urls = bulkValue.split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
+    if (!urls.length || urls.length > 10) { setInputError('Enter between 1 and 10 URLs, one per line.'); return; }
+    setInputError(''); setRequestError(''); setResult(null); setBulkResults(null); setRetryable(false); setLoading(true);
+    try {
+      const data = await requestBulkLinkCheck(urls);
+      setBulkResults(data.results || []);
+      (data.results || []).forEach((item) => saveScan({ type: 'Link', label: item.hostname || item.submittedUrl || 'URL', classification: item.classification, details: item.explanation }));
+    } catch (error) { setRequestError(error.message || 'The bulk check could not be completed.'); setRetryable(true); }
+    finally { setLoading(false); }
+  }
+
   function handleSubmit(event) {
     event.preventDefault();
-    runCheck(value);
+    if (bulkMode) runBulkCheck(); else runCheck(value);
   }
 
   function handleClear() {
     setValue('');
+    setBulkValue('');
+    setBulkResults(null);
     setInputError('');
     setLoading(false);
     resetResultState();
@@ -91,35 +111,18 @@ export function LinkChecker() {
             </div>
           </div>
           <form onSubmit={handleSubmit}>
+            <div className="form-actions">
+              <button type="button" className={`button ${bulkMode ? 'button-primary' : 'button-ghost'}`} onClick={() => { setBulkMode(!bulkMode); setInputError(''); setBulkResults(null); resetResultState(); }} disabled={loading}>{bulkMode ? 'Single URL mode' : 'Bulk check (up to 10)'}</button>
+            </div>
             <label className="field" htmlFor="link-checker-url">
-              <span>Website address</span>
-              <input
-                id="link-checker-url"
-                name="url"
-                type="text"
-                inputMode="url"
-                autoComplete="url"
-                value={value}
-                onChange={(event) => {
-                  setValue(event.target.value);
-                  if (inputError) setInputError('');
-                  resetResultState();
-                }}
-                placeholder="https://example.com"
-                aria-invalid={Boolean(inputError)}
-                aria-describedby={inputError ? 'link-checker-url-error' : 'link-checker-url-hint'}
-                disabled={loading}
-              />
-              <small id="link-checker-url-hint">Paste the complete URL, including https://</small>
-              {inputError ? (
-                <small id="link-checker-url-error" className="field-error" role="alert">
-                  {inputError}
-                </small>
-              ) : null}
+              <span>{bulkMode ? 'Website addresses (one per line)' : 'Website address'}</span>
+              {bulkMode ? <textarea id="link-checker-url" rows="6" value={bulkValue} onChange={(event) => { setBulkValue(event.target.value); if (inputError) setInputError(''); setBulkResults(null); }} placeholder={'https://example.com\nhttps://example.org'} disabled={loading} /> : <input id="link-checker-url" name="url" type="text" inputMode="url" autoComplete="url" value={value} onChange={(event) => { setValue(event.target.value); if (inputError) setInputError(''); resetResultState(); }} placeholder="https://example.com" aria-invalid={Boolean(inputError)} aria-describedby={inputError ? 'link-checker-url-error' : 'link-checker-url-hint'} disabled={loading} />}
+              <small id="link-checker-url-hint">{bulkMode ? 'Enter 1–10 complete HTTP or HTTPS URLs, one per line.' : 'Paste the complete URL, including https://'}</small>
+              {inputError ? <small id="link-checker-url-error" className="field-error" role="alert">{inputError}</small> : null}
             </label>
             <div className="form-actions">
               <Button type="submit" disabled={loading} aria-busy={loading}>
-                {loading ? 'Checking…' : 'Check Link'} <span>→</span>
+                {loading ? 'Checking…' : bulkMode ? 'Check URLs' : 'Check Link'} <span>→</span>
               </Button>
               <button type="button" className="button button-ghost" onClick={handleClear} disabled={loading}>
                 Clear
@@ -128,7 +131,7 @@ export function LinkChecker() {
                 <button
                   type="button"
                   className="button button-outline"
-                  onClick={() => runCheck(value)}
+                  onClick={() => bulkMode ? runBulkCheck() : runCheck(value)}
                   disabled={loading}
                 >
                   Retry
@@ -142,9 +145,7 @@ export function LinkChecker() {
             </p>
           ) : null}
           <Notice title="How this check works">
-            The address is sent to the NEXALUMI backend and, when configured, Google Web Risk for a
-            reputation lookup. The submitted website is never opened or crawled. Avoid submitting private
-            URLs or links containing access tokens. A result is not a guarantee of safety.
+            The address is sent to the NEXALUMI backend and configured threat-intelligence providers (PhishTank, URLhaus and OTX). The submitted website is never opened or crawled. Avoid submitting private URLs or links containing access tokens. A result is not a guarantee of safety.
           </Notice>
         </Card>
         <div className="side-stack">
@@ -176,6 +177,13 @@ export function LinkChecker() {
               <p>Please wait while NEXALUMI checks reputation information. The link is not being opened.</p>
             </div>
           </div>
+        </Card>
+      ) : null}
+      {bulkResults && !loading ? (
+        <Card className="preview-result" aria-live="polite">
+          <div className="panel-heading"><div><span className="eyebrow">BULK CHECK RESULTS</span><h2>{bulkResults.length} URL results</h2></div></div>
+          <div className="table-wrap"><table><thead><tr><th>HOST</th><th>RESULT</th><th>PROVIDERS</th></tr></thead><tbody>{bulkResults.map((item, index) => <tr key={`${item.submittedUrl}-${index}`}><td>{item.hostname || item.submittedUrl || 'Invalid URL'}</td><td>{item.classification}</td><td>{item.threatIntel?.successfulProviders ?? 0}/{item.threatIntel?.configuredProviders ?? 0}</td></tr>)}</tbody></table></div>
+          <Notice>Bulk checks use the same provider sources and daily allowance. Unknown means the reputation could not be established.</Notice>
         </Card>
       ) : null}
       {result && !loading ? (
@@ -210,6 +218,17 @@ export function LinkChecker() {
                 {result.threatIntel?.provider ? ` · ${result.threatIntel.provider}` : ''}
               </p>
             </div>
+            {result.threatIntel?.providers?.length ? (
+              <div className="sample-value">
+                <strong>Provider-by-provider results</strong>
+                <ul className="check-list">
+                  {result.threatIntel.providers.map((provider) => (
+                    <li key={provider.provider}>{provider.provider}: {provider.status}{provider.matched ? ' · threat match' : ''}</li>
+                  ))}
+                </ul>
+                <small>{result.threatIntel.successfulProviders} of {result.threatIntel.configuredProviders} providers returned usable results{result.threatIntel.cached ? ' · cached result' : ''}.</small>
+              </div>
+            ) : null}
             <div className="sample-value">
               <strong>Detection source</strong>
               <p>{result.detectionSource || 'Unavailable'}</p>

@@ -1,75 +1,53 @@
 # NEXALUMI
 
-**Your Digital Safety Partner**
+NEXALUMI is a web toolkit for digital-safety checks. The current source package includes a React/Vite frontend and an Express API.
 
-NEXALUMI is a consumer-facing digital safety MVP. The current functional module is the Link Checker.
+## Implemented in this update
 
-## Current release
+- Live URL reputation checks using PhishTank, URLhaus and AlienVault OTX adapters.
+- Google Web Risk adapter source retained but intentionally disabled/commented in the active provider registry.
+- URL normalization, URL heuristics including Punycode warnings, parallel provider calls, in-process and optional Upstash Redis caching.
+- Provider-by-provider result visibility, bulk URL-check API (up to 10 URLs), daily check allowance and per-IP rate limiting.
+- Optional Upstash Redis-backed distributed rate limiting and daily budget.
+- Message content heuristic checker.
+- Email content heuristics and sender-domain SPF/DMARC TXT-record presence inspection; no DKIM signature verification.
+- QR image decoding using the browser BarcodeDetector API where supported, followed by URL reputation checking.
+- Browser-local scan history.
+- Backend unit/API tests and CI workflow.
 
-- React + Vite frontend (`web/`)
-- Node.js + Express API (`server/`)
-- Shared JavaScript URL validation and result classifications (`shared/`)
-- Google Web Risk Lookup integration (backend environment variable required)
-- No database, authentication or persistent scan history
-- Message, Email and QR Checker pages remain interface previews
+## Quick start
 
-## Requirements
-
-- Node.js `22.22.2` or newer
-- npm
-
-## Run locally
-
-Terminal 1 — backend:
+Use Node.js 22.22.2 or newer.
 
 ```bash
 cd server
-npm install
+npm ci
 cp .env.example .env
-# Add your Google Web Risk API key to server/.env
-npm run dev
-```
-
-Terminal 2 — frontend:
-
-```bash
-cd web
-npm install
-npm run dev
-```
-
-Open the local Vite URL, normally `http://localhost:5173`, then choose **Open workspace → Link checker**.
-
-The Vite development server proxies `/api` to `http://127.0.0.1:3001`. Leave `VITE_API_BASE_URL` empty for local development.
-
-## Tests
-
-From the project root:
-
-```bash
-node --test --test-reporter=spec server/tests/*.test.js
-```
-
-Frontend tests:
-
-```bash
-cd web
 npm test
+npm start
 ```
 
-Production frontend build:
+In another terminal:
 
 ```bash
 cd web
+npm ci
+npm test
 npm run build
+npm run dev
 ```
 
-## Deployment
+Configure `VITE_API_BASE_URL` only for deployed frontend builds. Locally, Vite proxies `/api` to port 3001.
 
-See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for the Vercel frontend + Express API deployment steps and environment variables.
+## Documentation
 
-See [docs/DEMO_READINESS.md](docs/DEMO_READINESS.md) for the current demo scope, company presentation guidance and commercial launch gaps.
+- `docs/ARCHITECTURE.md`
+- `docs/API.md`
+- `docs/DEPLOYMENT.md`
+- `docs/SECURITY.md`
+- `docs/PRIVACY.md`
+- `docs/TEST_PLAN.md`
 
-## Important
+## Important limitations
 
-A `No Known Threat Found` result is not a guarantee that a website is safe. The backend does not fetch or crawl submitted websites. The Google Web Risk API key must remain on the backend and must never be added to a `VITE_` variable.
+This is an implementation candidate, not a guarantee of production readiness. Provider availability and free-tier terms can change. A clean result is not proof that a URL is safe. Message and email analysis are heuristics; email authentication only checks DNS record presence and does not verify a message's SPF/DKIM/DMARC pass. QR image decoding depends on browser support. Scan history is browser-local. Accounts, database-backed history, real admin controls, subscriptions and full notification workflows remain under development. Configure Redis for shared limits/cache before running multiple backend instances, and complete the release checklist in `docs/DEPLOYMENT.md`.

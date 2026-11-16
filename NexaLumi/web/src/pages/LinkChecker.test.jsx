@@ -55,7 +55,7 @@ describe('LinkChecker page', () => {
         detectionSource: 'Google Web Risk',
         heuristicWarnings: [],
         checkedAt: '2026-11-10T06:00:00.000Z',
-        explanation: 'Google Web Risk completed a lookup and reported no matching threat. No known threat found does not guarantee safety.',
+        explanation: 'The configured threat-intelligence providers completed lookups and reported no matching threat. No known threat found does not guarantee safety.',
         recommendations: ['Still consider who sent the link.'],
         retryable: false,
       }),
@@ -65,7 +65,7 @@ describe('LinkChecker page', () => {
     await user.type(screen.getByRole('textbox', { name: /website address/i }), 'https://example.com');
     await user.click(screen.getByRole('button', { name: /check link/i }));
     expect(await screen.findByRole('heading', { level: 2, name: 'No Known Threat Found' })).toBeInTheDocument();
-    expect(screen.getByText(/Google Web Risk completed a lookup/i)).toBeInTheDocument();
+    expect(screen.getByText(/configured threat-intelligence providers completed a lookup/i)).toBeInTheDocument();
     expect(screen.queryByText(/100% safe|guaranteed safe|completely secure/i)).not.toBeInTheDocument();
   });
 

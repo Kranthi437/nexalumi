@@ -14,14 +14,14 @@ function listen(app) {
 }
 
 const cleanProvider = {
-  name: 'Google Web Risk',
+  name: 'Test threat provider',
   async lookup() {
     return {
       ok: true,
       status: 'completed',
       matched: false,
       categories: [],
-      provider: 'Google Web Risk',
+      provider: 'Test threat provider',
     };
   },
 };
@@ -86,6 +86,16 @@ describe('link check HTTP API', () => {
       body: JSON.stringify({}),
     });
     assert.equal(response.status, 400);
+  });
+
+  it('supports bulk checks with per-URL results', async () => {
+    const checker = { async check(url) { return { statusCode: 200, result: { submittedUrl: url, hostname: new URL(url).hostname, classification: 'No Known Threat Found' } }; } };
+    const base = await start({ checker });
+    const response = await fetch(`${base}/api/link-check/bulk`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ urls: ['https://example.com', 'https://example.org'] }) });
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(body.count, 2);
+    assert.equal(body.results.length, 2);
   });
 
   it('rate limits repeated requests', async () => {

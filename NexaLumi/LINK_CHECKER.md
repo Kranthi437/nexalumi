@@ -1,169 +1,38 @@
 # NEXALUMI Link Checker
 
-The Link Checker reviews an HTTP or HTTPS website address against Google Web Risk. It does not open, crawl or fetch the submitted website. No known threat found does not guarantee safety.
+The Link Checker accepts HTTP/HTTPS URLs and checks their reputation against configured community threat-intelligence sources. It never opens or crawls the submitted destination.
+
+## Active provider chain
+
+- PhishTank: verified phishing URL lookups (free app key recommended; limited lookups may work without one).
+- URLhaus: malware distribution URL lookups (free abuse.ch Auth-Key required; community API is fair-use and commercial use may require the paid enhanced API).
+- AlienVault OTX: community threat-intelligence URL indicator lookup (API key required).
+- Google Web Risk: implementation retained in `server/src/services/threatIntel/googleWebRisk.js`, but import/registration is commented out in the active registry. It is not called.
+
+The providers are queried in parallel. A positive result from any successful provider produces `Known Malicious`. A no-match result is returned only when at least one configured provider successfully completed. If all active providers fail, the result is `Unknown / Unable to Check`.
 
 ## Architecture
 
-1. The React page validates the address in the browser for immediate feedback.
-2. The same address is posted to `POST /api/link-check`.
-3. The Express API validates again, applies NEXALUMI heuristics, and asks Google Web Risk about reputation.
-4. The API returns a structured result. The frontend never receives the Google API key.
-
-```
-Browser (React / Vite)
-  -> POST /api/link-check  { url }
-     -> URL validation (http/https only)
-     -> Heuristics (local, configurable)
-     -> Google Web Risk Lookup API
-  <- classification, explanations, recommendations
+```text
+React/Vite
+  -> POST /api/link-check { url }
+     -> server-side URL validation (HTTP/HTTPS only)
+     -> local URL heuristics (including Punycode)
+     -> SHA-256 cache key / optional Upstash Redis cache
+     -> parallel PhishTank + URLhaus + OTX lookups
+     -> aggregate evidence + provider status
+  <- classification, explanations, warnings, recommendations
 ```
 
-The threat intelligence provider lives in `server/src/services/threatIntel/`. Another provider can be added later without changing the page layout.
+The backend sends the URL to threat-intelligence providers. It does not make an HTTP request to the submitted host. Users should not submit private URLs, signed URLs or links containing tokens.
 
-## Frontend and backend files
+## Related checkers
 
-### Frontend
+- Message Checker: backend pattern-based analysis of pasted text.
+- Email Checker: content heuristics and SPF/DMARC DNS record-presence checks. It does not cryptographically verify DKIM or evaluate full SPF/DMARC authentication.
+- QR Checker: browser-native BarcodeDetector decoding where supported; decoded destination is sent to Link Checker.
+- Scan History: browser-local storage, not account-backed.
 
-- `web/src/pages/LinkChecker.jsx` — Link Checker page, reused NEXALUMI layout
-- `web/src/api/linkCheck.js` — browser request to the API
-- `web/src/components/ui.jsx` — shared Card, Button, PageTitle, Field, Notice
-- `web/src/pages/LinkChecker.test.jsx` — page tests
-- `web/vite.config.js` — proxies `/api` to `http://127.0.0.1:3001` in development
+Accounts, persistent server history, full admin operations, notifications, subscriptions and the sample dashboard metrics remain prototypes/under development.
 
-### Shared
-
-- `shared/url.js` — URL validation and normalisation
-- `shared/classifications.js` — the four result labels
-
-### Backend
-
-- `server/src/index.js` — process entry
-- `server/src/app.js` — Express app, CORS, size limits, rate limit, routes
-- `server/src/config.js` — environment loading
-- `server/src/services/linkChecker.js` — orchestration and result copy
-- `server/src/services/heuristics.js` — suspicious-pattern warnings
-- `server/src/services/threatIntel/googleWebRisk.js` — Google Web Risk client
-- `server/src/services/threatIntel/index.js` — provider factory
-- `server/src/middleware/rateLimit.js` — in-memory request limiter
-
-Other modules (Message Checker, Email Checker, QR Checker, homepage, navigation) are unchanged.
-
-## Result classifications
-
-| Classification | Meaning |
-| --- | --- |
-| Known Malicious | Google Web Risk reported a matching threat |
-| Suspicious | Web Risk reported no match, but NEXALUMI heuristics found concerning URL characteristics |
-| No Known Threat Found | Web Risk completed a lookup and reported no matching threat |
-| Unknown / Unable to Check | Invalid URL, missing API key, timeout, rate limit, or provider failure |
-
-Heuristic warnings are always labelled as NEXALUMI heuristics, not confirmed detections. API failures are never treated as safe.
-
-## Installation
-
-From the repository:
-
-```bash
-cd NexaLumi/web
-npm install
-
-cd ../server
-npm install
-```
-
-## Environment variables
-
-Copy `server/.env.example` to `server/.env`:
-
-```bash
-cd NexaLumi/server
-cp .env.example .env
-```
-
-| Variable | Required | Purpose |
-| --- | --- | --- |
-| `GOOGLE_WEB_RISK_API_KEY` | Yes, for live lookups | Google Web Risk API key. Keep it on the server only. |
-| `PORT` | No | API port. Default `3001`. |
-| `CORS_ORIGIN` | No | Allowed browser origin. Default `http://localhost:5173`. Comma-separated for multiple origins. |
-| `WEB_RISK_TIMEOUT_MS` | No | Lookup timeout. Default `8000`. |
-| `RATE_LIMIT_WINDOW_MS` | No | Rate-limit window. Default `60000`. |
-| `RATE_LIMIT_MAX` | No | Max checks per IP in that window. Default `20`. |
-| `VITE_API_BASE_URL` | No | Frontend API origin. Leave empty when using the Vite proxy. |
-
-If `GOOGLE_WEB_RISK_API_KEY` is missing, checks return **Unknown / Unable to Check**. The app does not invent a successful security result.
-
-## Google Web Risk setup
-
-1. Create or select a Google Cloud project.
-2. Enable the Web Risk API.
-3. Create an API key restricted to the Web Risk API.
-4. Put the key in `NexaLumi/server/.env` as `GOOGLE_WEB_RISK_API_KEY`.
-5. Do not prefix it with `VITE_` and do not commit `.env`.
-
-The backend calls `https://webrisk.googleapis.com/v1/uris:search` with the normalised URL and sends the API key in the `X-Goog-Api-Key` header. It never fetches the submitted website. The API key is not included in the request URL.
-
-## Local execution
-
-Terminal 1 — API:
-
-```bash
-cd NexaLumi/server
-npm run dev
-```
-
-Terminal 2 — UI:
-
-```bash
-cd NexaLumi/web
-npm run dev
-```
-
-Open the Vite URL (usually `http://localhost:5173`) and go to **Link checker** (`/app/link-check`).
-
-Production-style API start:
-
-```bash
-cd NexaLumi/server
-npm start
-```
-
-## Tests
-
-Backend:
-
-```bash
-cd NexaLumi/server
-npm test
-```
-
-Frontend:
-
-```bash
-cd NexaLumi/web
-npm test
-```
-
-Tests use mock Google Web Risk responses. They never call a live malicious URL.
-
-## Troubleshooting
-
-**Unknown / Unable to Check with “not configured”**  
-`GOOGLE_WEB_RISK_API_KEY` is missing or empty in `server/.env`. Restart the API after editing the file.
-
-**The UI shows a network or retry error**  
-Start the API on port 3001 before the Vite app. Confirm `GET http://127.0.0.1:3001/api/health` returns `{ "ok": true }`.
-
-**CORS error in the browser**  
-Set `CORS_ORIGIN` to the exact UI origin, for example `http://localhost:5173`. Restart the API.
-
-**429 Too many checks**  
-Wait for the rate-limit window, or raise `RATE_LIMIT_MAX` in local development only.
-
-**Timeouts**  
-Increase `WEB_RISK_TIMEOUT_MS` if Google Cloud is slow from your network. Timeouts are reported as Unknown, not safe.
-
-**javascript:, file: or data: addresses**  
-These are rejected. Only `http:` and `https:` are accepted.
-
-**The check seems to do nothing with a very long paste**  
-Input is limited to 2048 characters.
+See `docs/API.md`, `docs/DEPLOYMENT.md`, `docs/SECURITY.md`, and `docs/PRIVACY.md` for setup and limitations.
