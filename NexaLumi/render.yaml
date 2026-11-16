@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: nexalumi-link-checker-api
+    runtime: node
+    rootDir: server
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: 22.22.2
+      - key: GOOGLE_WEB_RISK_API_KEY
+        sync: false
+      - key: CORS_ORIGIN
+        value: https://trynexalumi.com,https://www.trynexalumi.com
+      - key: WEB_RISK_TIMEOUT_MS
+        value: "8000"
+      - key: RATE_LIMIT_WINDOW_MS
+        value: "60000"
+      - key: RATE_LIMIT_MAX
+        value: "20"
